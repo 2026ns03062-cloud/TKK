@@ -34,26 +34,65 @@ async function connectToMongo() {
     return;
   }
 
-  const mongoOptions = {
-    serverSelectionTimeoutMS: 15000,
-    connectTimeoutMS: 15000,
-    socketTimeoutMS: 20000,
-    maxPoolSize: 5,
-    retryWrites: false,
-    tls: true,
-  };
+  // Try multiple connection strategies
+  const strategies = [
+    {
+      name: 'SRV with TLS (default)',
+      uri: MONGODB_URI,
+      options: {
+        serverSelectionTimeoutMS: 20000,
+        connectTimeoutMS: 20000,
+        socketTimeoutMS: 25000,
+        maxPoolSize: 5,
+        retryWrites: true,
+      },
+    },
+    {
+      name: 'SRV with TLS disabled',
+      uri: MONGODB_URI,
+      options: {
+        serverSelectionTimeoutMS: 20000,
+        connectTimeoutMS: 20000,
+        socketTimeoutMS: 25000,
+        maxPoolSize: 5,
+        retryWrites: false,
+        tls: false,
+      },
+    },
+  ];
 
-  try {
-    console.log('Connecting to MongoDB...');
-    client = new MongoClient(MONGODB_URI, mongoOptions);
-    await client.connect();
-    db = client.db(DB_NAME);
-    console.log('✅ MongoDB connected successfully');
-  } catch (error) {
-    console.error('❌ MongoDB connection failed:', error.message);
-    db = null;
-    client = null;
-    return; // Continue without database
+  for (const strategy of strategies) {
+    try {
+      console.log(`[${strategy.name}] Attempting connection...`);
+      const attemptClient = new MongoClient(strategy.uri, strategy.options);
+      await attemptClient.connect();
+      client = attemptClient;
+      db = client.db(DB_NAME);
+      console.log(`✅ [${strategy.name}] Connected successfully!`);
+      break;
+    } catch (error) {
+      console.warn(`❌ [${strategy.name}] Failed: ${error.message}`);
+      if (client) {
+        try {
+          await client.close();
+        } catch (e) {}
+      }
+      client = null;
+      db = null;
+      continue;
+    }
+  }
+
+  // If still no connection, log detailed diagnostics
+  if (!db) {
+    console.error('⚠️  All MongoDB connection attempts failed');
+    console.error('⚠️  **CRITICAL: For live temple event, you MUST fix MongoDB connectivity**');
+    console.error('⚠️  Troubleshooting steps:');
+    console.error('     1. Check MongoDB Atlas Network Access (Whitelist)');
+    console.error('     2. Add 0.0.0.0/0 (allow all IPs) temporarily for Render');
+    console.error('     3. Verify MONGODB_URI environment variable is correct');
+    console.error('     4. Check cluster status in MongoDB Atlas dashboard');
+    return;
   }
 
   await db.collection('tokens').createIndex({ tokenCode: 1 }, { unique: true });
@@ -125,7 +164,18 @@ function authenticate(req, res, next) {
 }
 
 app.get('/health', (req, res) => {
-  res.json({ status: 'ok', service: 'tkk-token-api' });
+  const dbStatus = db ? 'connected' : 'disconnected';
+  const message = db 
+    ? '✅ Database connected - Ready for live event'
+    : '❌ Database disconnected - **CRITICAL: Using fallback memory storage (NOT SUITABLE FOR LIVE EVENT)**';
+  
+  res.json({ 
+    status: 'ok', 
+    service: 'tkk-token-api',
+    database: dbStatus,
+    message,
+    timestamp: new Date().toISOString()
+  });
 });
 
 app.post('/api/login', async (req, res) => {
