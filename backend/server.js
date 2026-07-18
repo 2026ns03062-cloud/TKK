@@ -33,15 +33,52 @@ async function connectToMongo() {
     return;
   }
 
-  const mongoOptions = {
-    serverSelectionTimeoutMS: 15000,
-    connectTimeoutMS: 15000,
-    socketTimeoutMS: 20000,
-    maxPoolSize: 5,
-  };
+  // Try multiple connection options
+  const connectionAttempts = [
+    {
+      name: 'Standard (with TLS)',
+      options: {
+        serverSelectionTimeoutMS: 15000,
+        connectTimeoutMS: 15000,
+        socketTimeoutMS: 20000,
+        maxPoolSize: 5,
+        retryWrites: false,
+      },
+    },
+    {
+      name: 'Disable TLS verification',
+      options: {
+        serverSelectionTimeoutMS: 15000,
+        connectTimeoutMS: 15000,
+        socketTimeoutMS: 20000,
+        maxPoolSize: 5,
+        retryWrites: false,
+        tls: true,
+        tlsInsecure: true,
+      },
+    },
+  ];
 
-  client = new MongoClient(MONGODB_URI, mongoOptions);
-  await client.connect();
+  let mongoOptions;
+  for (const attempt of connectionAttempts) {
+    try {
+      console.log(`Attempting MongoDB connection: ${attempt.name}...`);
+      mongoOptions = attempt.options;
+      client = new MongoClient(MONGODB_URI, mongoOptions);
+      await client.connect();
+      console.log(`✅ MongoDB connected using: ${attempt.name}`);
+      break;
+    } catch (error) {
+      console.warn(`❌ Connection failed (${attempt.name}): ${error.message}`);
+      if (client) await client.close();
+      continue;
+    }
+  }
+
+  if (!client) {
+    throw new Error('Failed to connect to MongoDB after all attempts');
+  }
+
   db = client.db(DB_NAME);
 
   await db.collection('tokens').createIndex({ tokenCode: 1 }, { unique: true });
