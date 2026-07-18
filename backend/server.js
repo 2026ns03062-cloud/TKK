@@ -58,6 +58,24 @@ async function connectToMongo() {
       createdAt: new Date(),
     }));
     await db.collection('tokens').insertMany(seedTokens);
+  } else {
+    // Migration: Fix existing tokens with 4-digit format to 3-digit format
+    const oldFormatTokens = await db.collection('tokens').find({ tokenCode: /^TKZ-\d{4}$/ }).toArray();
+    if (oldFormatTokens.length > 0) {
+      console.log(`Migrating ${oldFormatTokens.length} tokens from 4-digit to 3-digit format...`);
+      for (const token of oldFormatTokens) {
+        const match = token.tokenCode.match(/^TKZ-(\d{4})$/);
+        if (match) {
+          const number = parseInt(match[1], 10);
+          const newTokenCode = `TKZ-${String(number).padStart(3, '0')}`;
+          await db.collection('tokens').updateOne(
+            { tokenCode: token.tokenCode },
+            { $set: { tokenCode: newTokenCode } }
+          );
+        }
+      }
+      console.log('Token migration completed');
+    }
   }
 
   const volunteerCount = await db.collection('volunteers').countDocuments();
