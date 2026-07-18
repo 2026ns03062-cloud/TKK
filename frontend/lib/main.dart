@@ -370,6 +370,36 @@ class _AdminScreenState extends State<AdminScreen> {
     await _loadAdminData();
   }
 
+  Future<void> _syncToDatabase() async {
+    final prefs = await SharedPreferences.getInstance();
+    final token = prefs.getString('auth_token');
+    final response = await http.post(
+      Uri.parse('$baseUrl/api/admin/sync-fallback-to-db'),
+      headers: {
+        'Content-Type': 'application/json',
+        'x-auth-token': token ?? ''
+      },
+    );
+
+    if (!mounted) return;
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('✅ Synced ${data['synced']} tokens to database'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('❌ Database sync failed'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Padding(
@@ -406,6 +436,11 @@ class _AdminScreenState extends State<AdminScreen> {
                   onPressed: _generateTokens,
                   icon: const Icon(Icons.add),
                   label: const Text('Generate batch')),
+              const SizedBox(width: 8),
+              FilledButton.icon(
+                  onPressed: _syncToDatabase,
+                  icon: const Icon(Icons.cloud_upload),
+                  label: const Text('Sync to DB')),
             ],
           ),
           const SizedBox(height: 16),

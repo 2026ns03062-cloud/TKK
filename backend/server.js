@@ -76,6 +76,18 @@ async function connectToMongo() {
         retryWrites: false,
       },
     },
+    {
+      name: 'Direct TLS Disabled (emergency)',
+      uri: MONGODB_URI.replace('mongodb+srv://', 'mongodb://'),
+      options: {
+        serverSelectionTimeoutMS: 30000,
+        connectTimeoutMS: 30000,
+        socketTimeoutMS: 35000,
+        maxPoolSize: 2,
+        retryWrites: false,
+        tls: false,
+      },
+    },
   ];
 
   for (const strategy of strategies) {
@@ -90,7 +102,9 @@ async function connectToMongo() {
       break;
     } catch (error) {
       console.warn(`❌ [${strategy.name}] Failed`);
-      console.warn(`   Error: ${error.message.substring(0, 100)}...`);
+      console.warn(`   Error Type: ${error.name}`);
+      console.warn(`   Message: ${error.message}`);
+      console.warn(`   Code: ${error.code || 'N/A'}`);
       if (client) {
         try {
           await client.close();
