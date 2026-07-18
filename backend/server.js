@@ -19,7 +19,7 @@ let db;
 const fallbackUsers = USERS.map((user) => ({ ...user }));
 
 const defaultTokens = Array.from({ length: 20 }, (_, index) => ({
-  tokenCode: `TKZ-${String(index + 1).padStart(4, '0')}`,
+  tokenCode: `TKZ-${String(index + 1).padStart(3, '0')}`,
   status: 'pending',
   redeemedAt: null,
   redeemedBy: null,
@@ -51,7 +51,7 @@ async function connectToMongo() {
   const tokenCount = await db.collection('tokens').countDocuments();
   if (tokenCount === 0) {
     const seedTokens = Array.from({ length: 20 }, (_, index) => ({
-      tokenCode: `TKZ-${String(index + 1).padStart(4, '0')}`,
+      tokenCode: `TKZ-${String(index + 1).padStart(3, '0')}`,
       status: 'pending',
       redeemedAt: null,
       redeemedBy: null,
@@ -243,7 +243,7 @@ app.post('/api/admin/tokens/generate', authenticate, async (req, res) => {
     const count = Number(req.body?.count || 20);
     const nextTokenNumber = await db.collection('tokens').countDocuments();
     const docs = Array.from({ length: count }, (_, index) => ({
-      tokenCode: `TKZ-${String(nextTokenNumber + index + 1).padStart(4, '0')}`,
+      tokenCode: `TKZ-${String(nextTokenNumber + index + 1).padStart(3, '0')}`,
       status: 'pending',
       redeemedAt: null,
       redeemedBy: null,
