@@ -1,0 +1,230 @@
+const express = require('express');
+const cors = require('cors');
+const crypto = require('crypto');
+const { MongoClient } = require('mongodb');
+const { USERS } = require('./config/users');
+
+const app = express();
+const port = process.env.PORT || 3000;
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb+srv://2026ns03062_db_user:rEaRHZeO0FKOz9z8@cluster0.brbgxbn.mongodb.net/';
+const DB_NAME = process.env.MONGODB_DB_NAME || 'tkk_festival';
+
+app.use(cors());
+app.use(express.json());
+
+const sessions = new Map();
+let client;
+let db;
+
+async function connectToMongo() {
+  client = new MongoClient(MONGODB_URI);
+  await client.connect();
+  db = client.db(DB_NAME);
+
+  await db.collection('tokens').createIndex({ tokenCode: 1 }, { unique: true });
+  await db.collection('volunteers').createIndex({ username: 1 }, { unique: true });
+  await db.collection('redemption_logs').createIndex({ tokenCode: 1 });
+
+  const tokenCount = await db.collection('tokens').countDocuments();
+  if (tokenCount === 0) {
+    const seedTokens = Array.from({ length: 20 }, (_, index) => ({
+      tokenCode: `TKZ-${String(index + 1).padStart(4, '0')}`,
+      status: 'pending',
+      redeemedAt: null,
+      redeemedBy: null,
+      createdAt: new Date(),
+    }));
+    await db.collection('tokens').insertMany(seedTokens);
+  }
+
+  const volunteerCount = await db.collection('volunteers').countDocuments();
+  if (volunteerCount === 0) {
+    const volunteerDocs = USERS.map((user) => ({
+      username: user.username,
+      pin: user.pin,
+      role: user.role,
+      name: user.name,
+      createdAt: new Date(),
+    }));
+    await db.collection('volunteers').insertMany(volunteerDocs);
+  }
+}
+
+function createSession(username, role, name) {
+  const token = crypto.randomBytes(16).toString('hex');
+  sessions.set(token, { username, role, name, createdAt: new Date().toISOString() });
+  return token;
+}
+
+function authenticate(req, res, next) {
+  const token = req.headers['x-auth-token'] || req.headers.authorization?.replace('Bearer ', '');
+  if (!token) {
+    return res.status(401).json({ error: 'Missing authentication token' });
+  }
+
+  const user = sessions.get(token);
+  if (!user) {
+    return res.status(401).json({ error: 'Invalid session token' });
+  }
+
+  req.user = user;
+  next();
+}
+
+app.post('/api/login', async (req, res) => {
+  const { username, pin } = req.body || {};
+  if (!username || !pin) {
+    return res.status(400).json({ error: 'Username and PIN are required' });
+  }
+
+  try {
+    const volunteer = await db.collection('volunteers').findOne({ username, pin });
+    if (!volunteer) {
+      return res.status(401).json({ error: 'Invalid username or PIN' });
+    }
+
+    const token = createSession(volunteer.username, volunteer.role, volunteer.name);
+    return res.json({ token, user: { username: volunteer.username, role: volunteer.role, name: volunteer.name } });
+  } catch (error) {
+    console.error('Login error', error);
+    return res.status(500).json({ error: 'Unable to authenticate user' });
+  }
+});
+
+app.get('/api/me', authenticate, (req, res) => {
+  res.json({ user: req.user });
+});
+
+app.get('/api/tokens', authenticate, async (req, res) => {
+  try {
+    const list = await db.collection('tokens').find({}).sort({ createdAt: 1 }).toArray();
+    res.json({ tokens: list.map(({ _id, ...rest }) => rest) });
+  } catch (error) {
+    console.error('List tokens error', error);
+    res.status(500).json({ error: 'Unable to load tokens' });
+  }
+});
+
+app.post('/api/redeem', authenticate, async (req, res) => {
+  const { tokenCode } = req.body || {};
+  if (!tokenCode) {
+    return res.status(400).json({ error: 'tokenCode is required' });
+  }
+
+  try {
+    const updatedToken = await db.collection('tokens').findOneAndUpdate(
+      { tokenCode, status: 'pending' },
+      { $set: { status: 'redeemed', redeemedAt: new Date(), redeemedBy: req.user.username } },
+      { returnDocument: 'after' }
+    );
+
+    if (!updatedToken) {
+      const existingToken = await db.collection('tokens').findOne({ tokenCode });
+      return res.status(409).json({
+        success: false,
+        error: existingToken?.status === 'redeemed' ? 'Token already redeemed' : 'Unknown token',
+        token: existingToken,
+      });
+    }
+
+    await db.collection('redemption_logs').insertOne({
+      tokenCode,
+      volunteer: req.user.username,
+      timestamp: new Date(),
+      deviceInfo: 'backend-sample',
+    });
+
+    return res.json({ success: true, token: updatedToken });
+  } catch (error) {
+    console.error('Redeem error', error);
+    return res.status(500).json({ error: 'Unable to redeem token' });
+  }
+});
+
+app.get('/api/admin/summary', authenticate, async (req, res) => {
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Admin access required' });
+  }
+
+  try {
+    const list = await db.collection('tokens').find({}).toArray();
+    const redeemed = list.filter((item) => item.status === 'redeemed').length;
+    const pending = list.length - redeemed;
+
+    return res.json({
+      totalTokens: list.length,
+      redeemed,
+      pending,
+      redemptionRate: list.length ? (redeemed / list.length) * 100 : 0,
+    });
+  } catch (error) {
+    console.error('Admin summary error', error);
+    return res.status(500).json({ error: 'Unable to load summary' });
+  }
+});
+
+app.get('/api/admin/tokens', authenticate, async (req, res) => {
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Admin access required' });
+  }
+
+  try {
+    const list = await db.collection('tokens').find({}).sort({ createdAt: 1 }).toArray();
+    return res.json({ tokens: list.map(({ _id, ...rest }) => rest) });
+  } catch (error) {
+    console.error('Admin tokens error', error);
+    return res.status(500).json({ error: 'Unable to load tokens' });
+  }
+});
+
+app.post('/api/admin/tokens/generate', authenticate, async (req, res) => {
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Admin access required' });
+  }
+
+  try {
+    const count = Number(req.body?.count || 20);
+    const nextTokenNumber = await db.collection('tokens').countDocuments();
+    const docs = Array.from({ length: count }, (_, index) => ({
+      tokenCode: `TKZ-${String(nextTokenNumber + index + 1).padStart(4, '0')}`,
+      status: 'pending',
+      redeemedAt: null,
+      redeemedBy: null,
+      createdAt: new Date(),
+    }));
+
+    await db.collection('tokens').insertMany(docs);
+    return res.json({ created: count, totalTokens: nextTokenNumber + count });
+  } catch (error) {
+    console.error('Generate tokens error', error);
+    return res.status(500).json({ error: 'Unable to generate tokens' });
+  }
+});
+
+app.get('/api/admin/logs', authenticate, async (req, res) => {
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Admin access required' });
+  }
+
+  try {
+    const logs = await db.collection('redemption_logs').find({}).sort({ timestamp: -1 }).toArray();
+    return res.json({ logs });
+  } catch (error) {
+    console.error('Admin logs error', error);
+    return res.status(500).json({ error: 'Unable to load logs' });
+  }
+});
+
+async function startServer() {
+  try {
+    await connectToMongo();
+    app.listen(port, () => {
+      console.log(`TKK redemption API listening on port ${port}`);
+    });
+  } catch (error) {
+    console.error('MongoDB connection failed', error);
+    process.exit(1);
+  }
+}
+
+startServer();
