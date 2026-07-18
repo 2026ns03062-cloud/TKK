@@ -34,44 +34,63 @@ async function connectToMongo() {
     return;
   }
 
-  // Try multiple connection strategies
+  console.log('📡 MongoDB Connection Diagnostics:');
+  console.log(`   URI configured: ${MONGODB_URI ? 'Yes' : 'No'}`);
+  console.log(`   Database: ${DB_NAME}`);
+
+  // Try multiple connection strategies with increasing flexibility
   const strategies = [
     {
-      name: 'SRV with TLS (default)',
+      name: 'SRV Standard TLS',
       uri: MONGODB_URI,
       options: {
-        serverSelectionTimeoutMS: 20000,
-        connectTimeoutMS: 20000,
-        socketTimeoutMS: 25000,
+        serverSelectionTimeoutMS: 25000,
+        connectTimeoutMS: 25000,
+        socketTimeoutMS: 30000,
         maxPoolSize: 5,
         retryWrites: true,
+        tls: true,
       },
     },
     {
-      name: 'SRV with TLS disabled',
+      name: 'SRV with minimal TLS',
       uri: MONGODB_URI,
       options: {
-        serverSelectionTimeoutMS: 20000,
-        connectTimeoutMS: 20000,
-        socketTimeoutMS: 25000,
-        maxPoolSize: 5,
+        serverSelectionTimeoutMS: 25000,
+        connectTimeoutMS: 25000,
+        socketTimeoutMS: 30000,
+        maxPoolSize: 3,
         retryWrites: false,
-        tls: false,
+        tls: true,
+        tlsInsecure: true,
+      },
+    },
+    {
+      name: 'Direct connection (no SRV)',
+      uri: MONGODB_URI.replace('mongodb+srv://', 'mongodb://'),
+      options: {
+        serverSelectionTimeoutMS: 25000,
+        connectTimeoutMS: 25000,
+        socketTimeoutMS: 30000,
+        maxPoolSize: 3,
+        retryWrites: false,
       },
     },
   ];
 
   for (const strategy of strategies) {
     try {
-      console.log(`[${strategy.name}] Attempting connection...`);
+      console.log(`\n🔄 [${strategy.name}] Attempting connection...`);
       const attemptClient = new MongoClient(strategy.uri, strategy.options);
       await attemptClient.connect();
       client = attemptClient;
       db = client.db(DB_NAME);
       console.log(`✅ [${strategy.name}] Connected successfully!`);
+      console.log(`   Database ready: ${DB_NAME}`);
       break;
     } catch (error) {
-      console.warn(`❌ [${strategy.name}] Failed: ${error.message}`);
+      console.warn(`❌ [${strategy.name}] Failed`);
+      console.warn(`   Error: ${error.message.substring(0, 100)}...`);
       if (client) {
         try {
           await client.close();
@@ -85,13 +104,20 @@ async function connectToMongo() {
 
   // If still no connection, log detailed diagnostics
   if (!db) {
-    console.error('⚠️  All MongoDB connection attempts failed');
-    console.error('⚠️  **CRITICAL: For live temple event, you MUST fix MongoDB connectivity**');
-    console.error('⚠️  Troubleshooting steps:');
-    console.error('     1. Check MongoDB Atlas Network Access (Whitelist)');
-    console.error('     2. Add 0.0.0.0/0 (allow all IPs) temporarily for Render');
-    console.error('     3. Verify MONGODB_URI environment variable is correct');
-    console.error('     4. Check cluster status in MongoDB Atlas dashboard');
+    console.error('\n⚠️  ⚠️  ⚠️  CRITICAL: MongoDB Connection Failed');
+    console.error('━'.repeat(70));
+    console.error('All connection strategies failed. This is NOT suitable for live event!');
+    console.error('\n🔍 Troubleshooting Checklist:');
+    console.error('   1. ✓ MONGODB_URI environment variable is set');
+    console.error('   2. ☐ MongoDB Atlas Network Access whitelist includes 0.0.0.0/0');
+    console.error('   3. ☐ Cluster is in Running status (not paused)');
+    console.error('   4. ☐ Cluster credentials are correct');
+    console.error('   5. ☐ Internet connectivity from Render to MongoDB');
+    console.error('\n📋 Next Steps:');
+    console.error('   • Verify Network Access at https://cloud.mongodb.com');
+    console.error('   • Wait 2-3 minutes for whitelist changes to propagate');
+    console.error('   • Trigger Render redeploy after 5 minutes');
+    console.error('━'.repeat(70));
     return;
   }
 
