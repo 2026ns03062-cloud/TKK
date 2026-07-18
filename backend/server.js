@@ -290,6 +290,55 @@ app.get('/api/admin/logs', authenticate, async (req, res) => {
   }
 });
 
+// Sync fallback tokens to database (for when MongoDB connection is restored)
+app.post('/api/admin/sync-fallback-to-db', authenticate, async (req, res) => {
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Admin access required' });
+  }
+
+  if (!db) {
+    return res.status(503).json({ error: 'Database connection not available' });
+  }
+
+  try {
+    const redeemedTokens = Array.from(fallbackTokens.values()).filter(
+      (t) => t.status === 'redeemed'
+    );
+
+    if (redeemedTokens.length === 0) {
+      return res.json({ success: true, message: 'No pending redemptions to sync', synced: 0 });
+    }
+
+    let syncedCount = 0;
+    for (const token of redeemedTokens) {
+      const result = await db.collection('tokens').updateOne(
+        { tokenCode: token.tokenCode },
+        {
+          $set: {
+            status: 'redeemed',
+            redeemedAt: new Date(token.redeemedAt),
+            redeemedBy: token.redeemedBy,
+          },
+        }
+      );
+
+      if (result.modifiedCount > 0) {
+        syncedCount++;
+      }
+    }
+
+    return res.json({
+      success: true,
+      message: `Synced ${syncedCount} redeemed tokens to database`,
+      synced: syncedCount,
+      total: redeemedTokens.length,
+    });
+  } catch (error) {
+    console.error('Sync fallback error', error);
+    return res.status(500).json({ error: 'Unable to sync fallback tokens' });
+  }
+});
+
 async function startServer() {
   try {
     await connectToMongo();
