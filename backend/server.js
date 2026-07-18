@@ -16,6 +16,7 @@ app.use(express.json());
 const sessions = new Map();
 let client;
 let db;
+const fallbackUsers = USERS.map((user) => ({ ...user }));
 
 async function connectToMongo() {
   if (!useMongo) {
@@ -95,13 +96,21 @@ app.post('/api/login', async (req, res) => {
   }
 
   try {
-    const volunteer = await db.collection('volunteers').findOne({ username, pin });
-    if (!volunteer) {
+    if (db) {
+      const volunteer = await db.collection('volunteers').findOne({ username, pin });
+      if (volunteer) {
+        const token = createSession(volunteer.username, volunteer.role, volunteer.name);
+        return res.json({ token, user: { username: volunteer.username, role: volunteer.role, name: volunteer.name } });
+      }
+    }
+
+    const fallbackVolunteer = fallbackUsers.find((user) => user.username === username && user.pin === pin);
+    if (!fallbackVolunteer) {
       return res.status(401).json({ error: 'Invalid username or PIN' });
     }
 
-    const token = createSession(volunteer.username, volunteer.role, volunteer.name);
-    return res.json({ token, user: { username: volunteer.username, role: volunteer.role, name: volunteer.name } });
+    const token = createSession(fallbackVolunteer.username, fallbackVolunteer.role, fallbackVolunteer.name);
+    return res.json({ token, user: { username: fallbackVolunteer.username, role: fallbackVolunteer.role, name: fallbackVolunteer.name } });
   } catch (error) {
     console.error('Login error', error);
     return res.status(500).json({ error: 'Unable to authenticate user' });
