@@ -1,9 +1,10 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
-import 'package:intl/intl.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+const String baseUrl = 'https://tkk-token-backend.onrender.com';
 
 void main() {
   runApp(const TKKApp());
@@ -71,7 +72,7 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> _login() async {
     setState(() => _loading = true);
     final response = await http.post(
-      Uri.parse('http://10.0.2.2:3000/api/login'),
+      Uri.parse('$baseUrl/api/login'),
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode({
         'username': _usernameController.text.trim(),
@@ -164,7 +165,7 @@ class _HomeScreenState extends State<HomeScreen> {
     });
     final token = prefs.getString('auth_token');
     if (token == null) return;
-    final response = await http.get(Uri.parse('http://10.0.2.2:3000/api/me'), headers: {'x-auth-token': token});
+    final response = await http.get(Uri.parse('$baseUrl/api/me'), headers: {'x-auth-token': token});
     if (response.statusCode == 200) {
       final data = jsonDecode(response.body);
       setState(() {
@@ -215,7 +216,7 @@ class _ScannerScreenState extends State<ScannerScreen> {
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString('auth_token');
     final response = await http.post(
-      Uri.parse('http://10.0.2.2:3000/api/redeem'),
+      Uri.parse('$baseUrl/api/redeem'),
       headers: {
         'Content-Type': 'application/json',
         'x-auth-token': token ?? '',
@@ -325,8 +326,8 @@ class _AdminScreenState extends State<AdminScreen> {
     setState(() => _loading = true);
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString('auth_token');
-    final summaryResponse = await http.get(Uri.parse('http://10.0.2.2:3000/api/admin/summary'), headers: {'x-auth-token': token ?? ''});
-    final tokensResponse = await http.get(Uri.parse('http://10.0.2.2:3000/api/admin/tokens'), headers: {'x-auth-token': token ?? ''});
+    final summaryResponse = await http.get(Uri.parse('$baseUrl/api/admin/summary'), headers: {'x-auth-token': token ?? ''});
+    final tokensResponse = await http.get(Uri.parse('$baseUrl/api/admin/tokens'), headers: {'x-auth-token': token ?? ''});
     setState(() {
       _summary = jsonDecode(summaryResponse.body);
       _tokens = jsonDecode(tokensResponse.body)['tokens'];
@@ -338,7 +339,7 @@ class _AdminScreenState extends State<AdminScreen> {
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString('auth_token');
     await http.post(
-      Uri.parse('http://10.0.2.2:3000/api/admin/tokens/generate'),
+      Uri.parse('$baseUrl/api/admin/tokens/generate'),
       headers: {'Content-Type': 'application/json', 'x-auth-token': token ?? ''},
       body: jsonEncode({'count': 20}),
     );
