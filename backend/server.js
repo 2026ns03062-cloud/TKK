@@ -18,6 +18,15 @@ let client;
 let db;
 const fallbackUsers = USERS.map((user) => ({ ...user }));
 
+const defaultTokens = Array.from({ length: 20 }, (_, index) => ({
+  tokenCode: `TKZ-${String(index + 1).padStart(4, '0')}`,
+  status: 'pending',
+  redeemedAt: null,
+  redeemedBy: null,
+  createdAt: new Date(),
+}));
+const fallbackTokens = new Map(defaultTokens.map((t) => [t.tokenCode, t]));
+
 async function connectToMongo() {
   if (!useMongo) {
     console.warn('MongoDB URI not set; running without database persistence');
@@ -138,29 +147,51 @@ app.post('/api/redeem', authenticate, async (req, res) => {
   }
 
   try {
-    const updatedToken = await db.collection('tokens').findOneAndUpdate(
-      { tokenCode, status: 'pending' },
-      { $set: { status: 'redeemed', redeemedAt: new Date(), redeemedBy: req.user.username } },
-      { returnDocument: 'after' }
-    );
+    if (db) {
+      const updatedToken = await db.collection('tokens').findOneAndUpdate(
+        { tokenCode, status: 'pending' },
+        { $set: { status: 'redeemed', redeemedAt: new Date(), redeemedBy: req.user.username } },
+        { returnDocument: 'after' }
+      );
 
-    if (!updatedToken) {
+      if (updatedToken) {
+        await db.collection('redemption_logs').insertOne({
+          tokenCode,
+          volunteer: req.user.username,
+          timestamp: new Date(),
+          deviceInfo: 'backend-sample',
+        });
+        return res.json({ success: true, token: updatedToken });
+      }
+
       const existingToken = await db.collection('tokens').findOne({ tokenCode });
+      if (existingToken && existingToken.status === 'redeemed') {
+        return res.status(409).json({
+          success: false,
+          error: 'Token already redeemed',
+          token: existingToken,
+        });
+      }
+    }
+
+    const fallbackToken = fallbackTokens.get(tokenCode);
+    if (!fallbackToken) {
+      return res.status(404).json({ error: 'Unknown token' });
+    }
+
+    if (fallbackToken.status === 'redeemed') {
       return res.status(409).json({
         success: false,
-        error: existingToken?.status === 'redeemed' ? 'Token already redeemed' : 'Unknown token',
-        token: existingToken,
+        error: 'Token already redeemed',
+        token: fallbackToken,
       });
     }
 
-    await db.collection('redemption_logs').insertOne({
-      tokenCode,
-      volunteer: req.user.username,
-      timestamp: new Date(),
-      deviceInfo: 'backend-sample',
-    });
+    fallbackToken.status = 'redeemed';
+    fallbackToken.redeemedAt = new Date().toISOString();
+    fallbackToken.redeemedBy = req.user.username;
 
-    return res.json({ success: true, token: updatedToken });
+    return res.json({ success: true, token: fallbackToken });
   } catch (error) {
     console.error('Redeem error', error);
     return res.status(500).json({ error: 'Unable to redeem token' });
