@@ -217,12 +217,14 @@ class ScannerScreen extends StatefulWidget {
 class _ScannerScreenState extends State<ScannerScreen> {
   final _manualCodeController = TextEditingController();
   bool _loading = false;
+  bool _scanPaused = false;
   String? _resultText;
   bool _success = false;
 
   Future<void> _redeem(String tokenCode) async {
     setState(() {
       _loading = true;
+      _scanPaused = true;
       _resultText = null;
     });
     final prefs = await SharedPreferences.getInstance();
@@ -252,6 +254,12 @@ class _ScannerScreenState extends State<ScannerScreen> {
         _success = false;
       });
     }
+
+    await Future.delayed(const Duration(seconds: 2));
+    if (!mounted) return;
+    setState(() {
+      _scanPaused = false;
+    });
   }
 
   @override
@@ -281,15 +289,29 @@ class _ScannerScreenState extends State<ScannerScreen> {
                       ),
                       child: ClipRRect(
                         borderRadius: BorderRadius.circular(10),
-                        child: MobileScanner(
-                          onDetect: (capture) {
-                            if (capture.barcodes.isNotEmpty && !_loading) {
-                              final code = capture.barcodes.first.rawValue;
-                              if (code != null) {
-                                _redeem(code);
-                              }
-                            }
-                          },
+                        child: Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            MobileScanner(
+                              onDetect: (capture) {
+                                if (capture.barcodes.isNotEmpty && !_loading && !_scanPaused) {
+                                  final code = capture.barcodes.first.rawValue;
+                                  if (code != null) {
+                                    _redeem(code);
+                                  }
+                                }
+                              },
+                            ),
+                            if (_scanPaused || _loading)
+                              Container(
+                                color: Colors.black.withOpacity(0.4),
+                                child: const Center(
+                                  child: CircularProgressIndicator(
+                                    color: Colors.white,
+                                  ),
+                                ),
+                              ),
+                          ],
                         ),
                       ),
                     ),
