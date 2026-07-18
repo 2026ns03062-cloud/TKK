@@ -6,8 +6,9 @@ const { USERS } = require('./config/users');
 
 const app = express();
 const port = process.env.PORT || 3000;
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb+srv://2026ns03062_db_user:rEaRHZeO0FKOz9z8@cluster0.brbgxbn.mongodb.net/';
+const MONGODB_URI = process.env.MONGODB_URI || '';
 const DB_NAME = process.env.MONGODB_DB_NAME || 'tkk_festival';
+const useMongo = Boolean(process.env.MONGODB_URI);
 
 app.use(cors());
 app.use(express.json());
@@ -17,7 +18,19 @@ let client;
 let db;
 
 async function connectToMongo() {
-  client = new MongoClient(MONGODB_URI);
+  if (!useMongo) {
+    console.warn('MongoDB URI not set; running without database persistence');
+    return;
+  }
+
+  const mongoOptions = {
+    serverSelectionTimeoutMS: 15000,
+    connectTimeoutMS: 15000,
+    socketTimeoutMS: 20000,
+    maxPoolSize: 5,
+  };
+
+  client = new MongoClient(MONGODB_URI, mongoOptions);
   await client.connect();
   db = client.db(DB_NAME);
 
@@ -70,6 +83,10 @@ function authenticate(req, res, next) {
   req.user = user;
   next();
 }
+
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok', service: 'tkk-token-api' });
+});
 
 app.post('/api/login', async (req, res) => {
   const { username, pin } = req.body || {};
@@ -218,13 +235,13 @@ app.get('/api/admin/logs', authenticate, async (req, res) => {
 async function startServer() {
   try {
     await connectToMongo();
-    app.listen(port, () => {
-      console.log(`TKK redemption API listening on port ${port}`);
-    });
   } catch (error) {
-    console.error('MongoDB connection failed', error);
-    process.exit(1);
+    console.error('MongoDB connection failed, continuing without DB persistence:', error.message);
   }
+
+  app.listen(port, () => {
+    console.log(`TKK redemption API listening on port ${port}`);
+  });
 }
 
 startServer();
