@@ -30,56 +30,31 @@ const fallbackTokens = new Map(defaultTokens.map((t) => [t.tokenCode, t]));
 async function connectToMongo() {
   if (!useMongo) {
     console.warn('MongoDB URI not set; running without database persistence');
+    db = null;
     return;
   }
 
-  // Try multiple connection options
-  const connectionAttempts = [
-    {
-      name: 'Standard (with TLS)',
-      options: {
-        serverSelectionTimeoutMS: 15000,
-        connectTimeoutMS: 15000,
-        socketTimeoutMS: 20000,
-        maxPoolSize: 5,
-        retryWrites: false,
-      },
-    },
-    {
-      name: 'Disable TLS verification',
-      options: {
-        serverSelectionTimeoutMS: 15000,
-        connectTimeoutMS: 15000,
-        socketTimeoutMS: 20000,
-        maxPoolSize: 5,
-        retryWrites: false,
-        tls: true,
-        tlsInsecure: true,
-      },
-    },
-  ];
+  const mongoOptions = {
+    serverSelectionTimeoutMS: 15000,
+    connectTimeoutMS: 15000,
+    socketTimeoutMS: 20000,
+    maxPoolSize: 5,
+    retryWrites: false,
+    tls: true,
+  };
 
-  let mongoOptions;
-  for (const attempt of connectionAttempts) {
-    try {
-      console.log(`Attempting MongoDB connection: ${attempt.name}...`);
-      mongoOptions = attempt.options;
-      client = new MongoClient(MONGODB_URI, mongoOptions);
-      await client.connect();
-      console.log(`✅ MongoDB connected using: ${attempt.name}`);
-      break;
-    } catch (error) {
-      console.warn(`❌ Connection failed (${attempt.name}): ${error.message}`);
-      if (client) await client.close();
-      continue;
-    }
+  try {
+    console.log('Connecting to MongoDB...');
+    client = new MongoClient(MONGODB_URI, mongoOptions);
+    await client.connect();
+    db = client.db(DB_NAME);
+    console.log('✅ MongoDB connected successfully');
+  } catch (error) {
+    console.error('❌ MongoDB connection failed:', error.message);
+    db = null;
+    client = null;
+    return; // Continue without database
   }
-
-  if (!client) {
-    throw new Error('Failed to connect to MongoDB after all attempts');
-  }
-
-  db = client.db(DB_NAME);
 
   await db.collection('tokens').createIndex({ tokenCode: 1 }, { unique: true });
   await db.collection('volunteers').createIndex({ username: 1 }, { unique: true });
