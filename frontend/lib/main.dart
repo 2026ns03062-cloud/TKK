@@ -45,9 +45,11 @@ class _SplashScreenState extends State<SplashScreen> {
     final token = prefs.getString('auth_token');
     if (!mounted) return;
     if (token != null && token.isNotEmpty) {
-      Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => const HomeScreen()));
+      Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (_) => const HomeScreen()));
     } else {
-      Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => const LoginScreen()));
+      Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (_) => const LoginScreen()));
     }
   }
 
@@ -87,10 +89,12 @@ class _LoginScreenState extends State<LoginScreen> {
       await prefs.setString('auth_token', data['token']);
       await prefs.setString('user_name', data['user']['name']);
       if (!mounted) return;
-      Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => const HomeScreen()));
+      Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (_) => const HomeScreen()));
     } else {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Invalid login details')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Invalid login details')));
     }
   }
 
@@ -107,27 +111,32 @@ class _LoginScreenState extends State<LoginScreen> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text('TKK Temple Flow', style: Theme.of(context).textTheme.headlineSmall),
+                    Text('TKK Temple Flow',
+                        style: Theme.of(context).textTheme.headlineSmall),
                     const SizedBox(height: 8),
                     const Text('Volunteer login'),
                     const SizedBox(height: 24),
                     TextField(
                       controller: _usernameController,
-                      decoration: const InputDecoration(labelText: 'Username', border: OutlineInputBorder()),
+                      decoration: const InputDecoration(
+                          labelText: 'Username', border: OutlineInputBorder()),
                     ),
                     const SizedBox(height: 12),
                     TextField(
                       controller: _pinController,
                       keyboardType: TextInputType.number,
                       obscureText: true,
-                      decoration: const InputDecoration(labelText: 'PIN', border: OutlineInputBorder()),
+                      decoration: const InputDecoration(
+                          labelText: 'PIN', border: OutlineInputBorder()),
                     ),
                     const SizedBox(height: 24),
                     SizedBox(
                       width: double.infinity,
                       child: FilledButton(
                         onPressed: _loading ? null : _login,
-                        child: _loading ? const CircularProgressIndicator() : const Text('Sign In'),
+                        child: _loading
+                            ? const CircularProgressIndicator()
+                            : const Text('Sign In'),
                       ),
                     ),
                   ],
@@ -165,7 +174,8 @@ class _HomeScreenState extends State<HomeScreen> {
     });
     final token = prefs.getString('auth_token');
     if (token == null) return;
-    final response = await http.get(Uri.parse('$baseUrl/api/me'), headers: {'x-auth-token': token});
+    final response = await http
+        .get(Uri.parse('$baseUrl/api/me'), headers: {'x-auth-token': token});
     if (response.statusCode == 200) {
       final data = jsonDecode(response.body);
       setState(() {
@@ -178,7 +188,9 @@ class _HomeScreenState extends State<HomeScreen> {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('auth_token');
     if (!mounted) return;
-    Navigator.of(context).pushAndRemoveUntil(MaterialPageRoute(builder: (_) => const LoginScreen()), (route) => false);
+    Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const LoginScreen()),
+        (route) => false);
   }
 
   @override
@@ -269,13 +281,16 @@ class _ScannerScreenState extends State<ScannerScreen> {
                   const SizedBox(height: 16),
                   TextField(
                     controller: _manualCodeController,
-                    decoration: const InputDecoration(labelText: 'Token code', border: OutlineInputBorder()),
+                    decoration: const InputDecoration(
+                        labelText: 'Token code', border: OutlineInputBorder()),
                   ),
                   const SizedBox(height: 12),
                   SizedBox(
                     width: double.infinity,
                     child: FilledButton.icon(
-                      onPressed: _loading ? null : () => _redeem(_manualCodeController.text.trim()),
+                      onPressed: _loading
+                          ? null
+                          : () => _redeem(_manualCodeController.text.trim()),
                       icon: const Icon(Icons.qr_code_2),
                       label: const Text('Redeem token'),
                     ),
@@ -295,7 +310,9 @@ class _ScannerScreenState extends State<ScannerScreen> {
               ),
               child: Text(
                 _resultText!,
-                style: TextStyle(color: _success ? Colors.green.shade800 : Colors.red.shade800),
+                style: TextStyle(
+                    color:
+                        _success ? Colors.green.shade800 : Colors.red.shade800),
               ),
             ),
         ],
@@ -326,8 +343,12 @@ class _AdminScreenState extends State<AdminScreen> {
     setState(() => _loading = true);
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString('auth_token');
-    final summaryResponse = await http.get(Uri.parse('$baseUrl/api/admin/summary'), headers: {'x-auth-token': token ?? ''});
-    final tokensResponse = await http.get(Uri.parse('$baseUrl/api/admin/tokens'), headers: {'x-auth-token': token ?? ''});
+    final summaryResponse = await http.get(
+        Uri.parse('$baseUrl/api/admin/summary'),
+        headers: {'x-auth-token': token ?? ''});
+    final tokensResponse = await http.get(
+        Uri.parse('$baseUrl/api/admin/tokens'),
+        headers: {'x-auth-token': token ?? ''});
     setState(() {
       _summary = jsonDecode(summaryResponse.body);
       _tokens = jsonDecode(tokensResponse.body)['tokens'];
@@ -340,7 +361,10 @@ class _AdminScreenState extends State<AdminScreen> {
     final token = prefs.getString('auth_token');
     await http.post(
       Uri.parse('$baseUrl/api/admin/tokens/generate'),
-      headers: {'Content-Type': 'application/json', 'x-auth-token': token ?? ''},
+      headers: {
+        'Content-Type': 'application/json',
+        'x-auth-token': token ?? ''
+      },
       body: jsonEncode({'count': 20}),
     );
     await _loadAdminData();
@@ -363,16 +387,25 @@ class _AdminScreenState extends State<AdminScreen> {
                       children: [
                         const Text('Summary'),
                         const SizedBox(height: 8),
-                        Text(_summary == null ? 'Loading...' : 'Total: ${_summary!['totalTokens']}'),
-                        Text(_summary == null ? '' : 'Redeemed: ${_summary!['redeemed']}'),
-                        Text(_summary == null ? '' : 'Pending: ${_summary!['pending']}'),
+                        Text(_summary == null
+                            ? 'Loading...'
+                            : 'Total: ${_summary!['totalTokens']}'),
+                        Text(_summary == null
+                            ? ''
+                            : 'Redeemed: ${_summary!['redeemed']}'),
+                        Text(_summary == null
+                            ? ''
+                            : 'Pending: ${_summary!['pending']}'),
                       ],
                     ),
                   ),
                 ),
               ),
               const SizedBox(width: 12),
-              FilledButton.icon(onPressed: _generateTokens, icon: const Icon(Icons.add), label: const Text('Generate batch')),
+              FilledButton.icon(
+                  onPressed: _generateTokens,
+                  icon: const Icon(Icons.add),
+                  label: const Text('Generate batch')),
             ],
           ),
           const SizedBox(height: 16),
@@ -386,8 +419,14 @@ class _AdminScreenState extends State<AdminScreen> {
                       final redeemed = token['status'] == 'redeemed';
                       return ListTile(
                         title: Text(token['tokenCode']),
-                        subtitle: Text(redeemed ? 'Redeemed by ${token['redeemedBy']}' : 'Pending'),
-                        trailing: Icon(redeemed ? Icons.check_circle : Icons.pending_actions, color: redeemed ? Colors.green : Colors.orange),
+                        subtitle: Text(redeemed
+                            ? 'Redeemed by ${token['redeemedBy']}'
+                            : 'Pending'),
+                        trailing: Icon(
+                            redeemed
+                                ? Icons.check_circle
+                                : Icons.pending_actions,
+                            color: redeemed ? Colors.green : Colors.orange),
                       );
                     },
                   ),
