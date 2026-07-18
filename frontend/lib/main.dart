@@ -258,64 +258,82 @@ class _ScannerScreenState extends State<ScannerScreen> {
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.all(16),
-      child: Column(
-        children: [
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                children: [
-                  const Text('Scan or enter a token'),
-                  const SizedBox(height: 12),
-                  SizedBox(
-                    height: 220,
-                    child: MobileScanner(
-                      onDetect: (capture) {
-                        final code = capture.barcodes.first.rawValue;
-                        if (code != null && !_loading) {
-                          _redeem(code);
-                        }
-                      },
+      child: SingleChildScrollView(
+        child: Column(
+          children: [
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  children: [
+                    const Text('Scan or enter a token'),
+                    const SizedBox(height: 16),
+                    // Square scanner box
+                    Container(
+                      width: 300,
+                      height: 300,
+                      decoration: BoxDecoration(
+                        border: Border.all(
+                          color: const Color(0xFF8B1E3F),
+                          width: 2,
+                        ),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(10),
+                        child: MobileScanner(
+                          onDetect: (capture) {
+                            if (capture.barcodes.isNotEmpty && !_loading) {
+                              final code = capture.barcodes.first.rawValue;
+                              if (code != null) {
+                                _redeem(code);
+                              }
+                            }
+                          },
+                        ),
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 16),
-                  TextField(
-                    controller: _manualCodeController,
-                    decoration: const InputDecoration(
-                        labelText: 'Token code', border: OutlineInputBorder()),
-                  ),
-                  const SizedBox(height: 12),
-                  SizedBox(
-                    width: double.infinity,
-                    child: FilledButton.icon(
-                      onPressed: _loading
-                          ? null
-                          : () => _redeem(_manualCodeController.text.trim()),
-                      icon: const Icon(Icons.qr_code_2),
-                      label: const Text('Redeem token'),
+                    const SizedBox(height: 20),
+                    TextField(
+                      controller: _manualCodeController,
+                      decoration: const InputDecoration(
+                        labelText: 'Or enter token code',
+                        border: OutlineInputBorder(),
+                      ),
                     ),
-                  ),
-                ],
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton.icon(
+                        onPressed: _loading
+                            ? null
+                            : () => _redeem(_manualCodeController.text.trim()),
+                        icon: const Icon(Icons.qr_code_2),
+                        label: const Text('Redeem token'),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
-          ),
-          const SizedBox(height: 16),
-          if (_resultText != null)
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: _success ? Colors.green.shade50 : Colors.red.shade50,
-                borderRadius: BorderRadius.circular(12),
+            const SizedBox(height: 16),
+            if (_resultText != null)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: _success ? Colors.green.shade50 : Colors.red.shade50,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  _resultText!,
+                  style: TextStyle(
+                      color:
+                          _success ? Colors.green.shade800 : Colors.red.shade800),
+                ),
               ),
-              child: Text(
-                _resultText!,
-                style: TextStyle(
-                    color:
-                        _success ? Colors.green.shade800 : Colors.red.shade800),
-              ),
-            ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -332,11 +350,21 @@ class _AdminScreenState extends State<AdminScreen> {
   Map<String, dynamic>? _summary;
   List<dynamic> _tokens = [];
   bool _loading = false;
+  bool _showScanner = false;
+  final _manualCodeController = TextEditingController();
+  String? _scanResultText;
+  bool _scanSuccess = false;
 
   @override
   void initState() {
     super.initState();
     _loadAdminData();
+  }
+
+  @override
+  void dispose() {
+    _manualCodeController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadAdminData() async {
@@ -400,72 +428,233 @@ class _AdminScreenState extends State<AdminScreen> {
     }
   }
 
+  Future<void> _redeemToken(String tokenCode) async {
+    setState(() {
+      _scanResultText = null;
+    });
+    final prefs = await SharedPreferences.getInstance();
+    final token = prefs.getString('auth_token');
+    final response = await http.post(
+      Uri.parse('$baseUrl/api/redeem'),
+      headers: {
+        'Content-Type': 'application/json',
+        'x-auth-token': token ?? '',
+      },
+      body: jsonEncode({'tokenCode': tokenCode}),
+    );
+
+    if (response.statusCode == 200) {
+      setState(() {
+        _scanResultText = 'Gift handed over for $tokenCode';
+        _scanSuccess = true;
+      });
+      _manualCodeController.clear();
+      await Future.delayed(const Duration(seconds: 2));
+      _loadAdminData();
+    } else {
+      final data = jsonDecode(response.body);
+      setState(() {
+        _scanResultText = data['error'] ?? 'Unable to redeem token';
+        _scanSuccess = false;
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.all(16),
       child: Column(
         children: [
+          // Toggle buttons for Dashboard / Redeem QR
           Row(
             children: [
               Expanded(
-                child: Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text('Summary'),
-                        const SizedBox(height: 8),
-                        Text(_summary == null
-                            ? 'Loading...'
-                            : 'Total: ${_summary!['totalTokens']}'),
-                        Text(_summary == null
-                            ? ''
-                            : 'Redeemed: ${_summary!['redeemed']}'),
-                        Text(_summary == null
-                            ? ''
-                            : 'Pending: ${_summary!['pending']}'),
-                      ],
-                    ),
+                child: FilledButton(
+                  onPressed: !_showScanner
+                      ? null
+                      : () => setState(() => _showScanner = false),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: !_showScanner
+                        ? const Color(0xFF8B1E3F)
+                        : Colors.grey,
                   ),
+                  child: const Text('Dashboard'),
                 ),
               ),
               const SizedBox(width: 12),
-              FilledButton.icon(
-                  onPressed: _generateTokens,
-                  icon: const Icon(Icons.add),
-                  label: const Text('Generate batch')),
-              const SizedBox(width: 8),
-              FilledButton.icon(
-                  onPressed: _syncToDatabase,
-                  icon: const Icon(Icons.cloud_upload),
-                  label: const Text('Sync to DB')),
+              Expanded(
+                child: FilledButton(
+                  onPressed: _showScanner
+                      ? null
+                      : () => setState(() => _showScanner = true),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: _showScanner
+                        ? const Color(0xFF8B1E3F)
+                        : Colors.grey,
+                  ),
+                  child: const Text('Redeem QR'),
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 16),
-          Expanded(
-            child: _loading
-                ? const Center(child: CircularProgressIndicator())
-                : ListView.builder(
-                    itemCount: _tokens.length,
-                    itemBuilder: (context, index) {
-                      final token = _tokens[index];
-                      final redeemed = token['status'] == 'redeemed';
-                      return ListTile(
-                        title: Text(token['tokenCode']),
-                        subtitle: Text(redeemed
-                            ? 'Redeemed by ${token['redeemedBy']}'
-                            : 'Pending'),
-                        trailing: Icon(
-                            redeemed
-                                ? Icons.check_circle
-                                : Icons.pending_actions,
-                            color: redeemed ? Colors.green : Colors.orange),
-                      );
-                    },
+          // Dashboard View
+          if (!_showScanner)
+            Expanded(
+              child: Column(
+                children: [
+                  Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text('Summary'),
+                          const SizedBox(height: 8),
+                          Text(_summary == null
+                              ? 'Loading...'
+                              : 'Total: ${_summary!['totalTokens']}'),
+                          Text(_summary == null
+                              ? ''
+                              : 'Redeemed: ${_summary!['redeemed']}'),
+                          Text(_summary == null
+                              ? ''
+                              : 'Pending: ${_summary!['pending']}'),
+                        ],
+                      ),
+                    ),
                   ),
-          ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: FilledButton.icon(
+                          onPressed: _generateTokens,
+                          icon: const Icon(Icons.add),
+                          label: const Text('Generate batch'),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: FilledButton.icon(
+                          onPressed: _syncToDatabase,
+                          icon: const Icon(Icons.cloud_upload),
+                          label: const Text('Sync to DB'),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  Expanded(
+                    child: _loading
+                        ? const Center(child: CircularProgressIndicator())
+                        : ListView.builder(
+                            itemCount: _tokens.length,
+                            itemBuilder: (context, index) {
+                              final token = _tokens[index];
+                              final redeemed = token['status'] == 'redeemed';
+                              return ListTile(
+                                title: Text(token['tokenCode']),
+                                subtitle: Text(redeemed
+                                    ? 'Redeemed by ${token['redeemedBy']}'
+                                    : 'Pending'),
+                                trailing: Icon(
+                                    redeemed
+                                        ? Icons.check_circle
+                                        : Icons.pending_actions,
+                                    color: redeemed
+                                        ? Colors.green
+                                        : Colors.orange),
+                              );
+                            },
+                          ),
+                  ),
+                ],
+              ),
+            ),
+          // Scanner View
+          if (_showScanner)
+            Expanded(
+              child: SingleChildScrollView(
+                child: Column(
+                  children: [
+                    Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          children: [
+                            const Text('Scan or enter a token'),
+                            const SizedBox(height: 16),
+                            // Square scanner box
+                            Container(
+                              width: 300,
+                              height: 300,
+                              decoration: BoxDecoration(
+                                border: Border.all(
+                                  color: const Color(0xFF8B1E3F),
+                                  width: 2,
+                                ),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(10),
+                                child: MobileScanner(
+                                  onDetect: (capture) {
+                                    if (capture.barcodes.isNotEmpty) {
+                                      final code = capture.barcodes.first.rawValue;
+                                      if (code != null) {
+                                        _redeemToken(code);
+                                      }
+                                    }
+                                  },
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 20),
+                            TextField(
+                              controller: _manualCodeController,
+                              decoration: const InputDecoration(
+                                labelText: 'Or enter token code',
+                                border: OutlineInputBorder(),
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            SizedBox(
+                              width: double.infinity,
+                              child: FilledButton.icon(
+                                onPressed: () =>
+                                    _redeemToken(_manualCodeController.text.trim()),
+                                icon: const Icon(Icons.qr_code_2),
+                                label: const Text('Redeem token'),
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+                            if (_scanResultText != null)
+                              Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.all(16),
+                                decoration: BoxDecoration(
+                                  color: _scanSuccess
+                                      ? Colors.green.shade50
+                                      : Colors.red.shade50,
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Text(
+                                  _scanResultText!,
+                                  style: TextStyle(
+                                    color: _scanSuccess
+                                        ? Colors.green.shade800
+                                        : Colors.red.shade800,
+                                  ),
+                                ),
+                              ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),              ),            ),
         ],
       ),
     );
